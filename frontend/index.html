@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chat Platform</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1.6.1/dist/sockjs.min.js"></script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:#0f1117; --surface:#1a1d27; --surface2:#22263a; --border:#2e3347;
+      --accent:#5865f2; --accent-h:#4752c4; --text:#e2e4f0; --muted:#7b82a0;
+      --danger:#ed4245; --success:#3ba55d; --warn:#faa61a; --radius:10px;
+      --font:'Segoe UI',system-ui,sans-serif;
+    }
+    body { background:var(--bg); color:var(--text); font-family:var(--font); height:100vh; overflow:hidden; }
+    .app { display:flex; height:100vh; }
+    .sidebar { width:240px; min-width:240px; background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; }
+    .main { flex:1; display:flex; flex-direction:column; min-width:0; }
+    .chat-area { flex:1; display:flex; flex-direction:column; min-height:0; }
+    .sidebar-header { padding:16px; border-bottom:1px solid var(--border); }
+    .sidebar-header h2 { font-size:15px; font-weight:700; }
+    .sidebar-header p { font-size:12px; color:var(--muted); margin-top:2px; }
+    .section-label { padding:16px 16px 6px; font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.8px; }
+    .room-item { display:flex; align-items:center; gap:8px; padding:7px 16px; cursor:pointer; border-radius:6px; margin:1px 6px; font-size:14px; color:var(--muted); transition:all .15s; }
+    .room-item:hover { background:var(--surface2); color:var(--text); }
+    .room-item.active { background:var(--accent); color:#fff; }
+    .sidebar-footer { margin-top:auto; padding:12px; border-top:1px solid var(--border); display:flex; align-items:center; gap:10px; }
+    .avatar { width:36px; height:36px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:700; color:#fff; flex-shrink:0; }
+    .user-info { flex:1; min-width:0; }
+    .user-name { font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .user-status { font-size:11px; color:var(--success); }
+    .logout-btn { background:none; border:none; color:var(--muted); cursor:pointer; font-size:18px; padding:4px; border-radius:4px; }
+    .logout-btn:hover { color:var(--danger); }
+    .auth-overlay { position:fixed; inset:0; background:var(--bg); display:flex; align-items:center; justify-content:center; z-index:100; }
+    .auth-card { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:40px; width:380px; }
+    .auth-card h1 { font-size:24px; font-weight:800; margin-bottom:6px; }
+    .auth-card p { color:var(--muted); font-size:14px; margin-bottom:28px; }
+    .tabs { display:flex; gap:4px; margin-bottom:24px; background:var(--surface2); border-radius:8px; padding:4px; }
+    .tab { flex:1; padding:8px; border:none; background:none; color:var(--muted); cursor:pointer; border-radius:6px; font-size:14px; font-weight:600; transition:all .15s; }
+    .tab.active { background:var(--accent); color:#fff; }
+    .form-group { margin-bottom:16px; }
+    label { display:block; font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px; }
+    input { width:100%; padding:10px 14px; background:var(--surface2); border:1px solid var(--border); border-radius:var(--radius); color:var(--text); font-size:14px; outline:none; transition:border .15s; }
+    input:focus { border-color:var(--accent); }
+    .btn { width:100%; padding:11px; background:var(--accent); color:#fff; border:none; border-radius:var(--radius); font-size:15px; font-weight:700; cursor:pointer; transition:background .15s; }
+    .btn:hover { background:var(--accent-h); }
+    .btn:disabled { opacity:.5; cursor:not-allowed; }
+    .error-msg { background:#2d1214; border:1px solid var(--danger); border-radius:8px; padding:10px 14px; color:#ff7b7e; font-size:13px; margin-bottom:16px; }
+    .chat-header { padding:14px 20px; border-bottom:1px solid var(--border); background:var(--surface); display:flex; align-items:center; gap:12px; }
+    .chat-header h3 { font-size:16px; font-weight:700; }
+    .status-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+    .status-dot.connected { background:var(--success); }
+    .status-dot.disconnected { background:var(--danger); }
+    .status-dot.connecting { background:var(--warn); }
+    .conn-label { font-size:12px; color:var(--muted); margin-left:auto; }
+    .messages { flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:2px; }
+    .messages::-webkit-scrollbar { width:6px; }
+    .messages::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+    .load-more { align-self:center; margin-bottom:12px; padding:7px 18px; background:var(--surface2); border:1px solid var(--border); border-radius:20px; color:var(--muted); cursor:pointer; font-size:13px; }
+    .msg-row { display:flex; gap:10px; padding:3px 0; border-radius:6px; }
+    .msg-row:hover { background:var(--surface2); }
+    .msg-avatar { width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:700; flex-shrink:0; margin-top:2px; }
+    .msg-body { flex:1; min-width:0; }
+    .msg-meta { display:flex; align-items:baseline; gap:8px; margin-bottom:3px; }
+    .msg-author { font-size:14px; font-weight:700; }
+    .msg-time { font-size:11px; color:var(--muted); }
+    .msg-text { font-size:14px; line-height:1.5; word-break:break-word; white-space:pre-wrap; }
+    .sys-msg { text-align:center; color:var(--muted); font-size:12px; padding:6px 0; font-style:italic; }
+    .typing-indicator { padding:4px 20px 8px; font-size:12px; color:var(--muted); height:24px; }
+    .typing-dots span { display:inline-block; animation:bounce .8s infinite; }
+    .typing-dots span:nth-child(2) { animation-delay:.15s; }
+    .typing-dots span:nth-child(3) { animation-delay:.3s; }
+    @keyframes bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-4px)} }
+    .input-bar { padding:12px 16px; border-top:1px solid var(--border); background:var(--surface); }
+    .input-wrap { display:flex; align-items:center; gap:8px; background:var(--surface2); border:1px solid var(--border); border-radius:var(--radius); padding:4px 4px 4px 14px; transition:border .15s; }
+    .input-wrap:focus-within { border-color:var(--accent); }
+    .msg-input { flex:1; background:none; border:none; color:var(--text); font-size:14px; outline:none; padding:7px 0; resize:none; font-family:var(--font); line-height:1.4; max-height:120px; }
+    .send-btn { width:36px; height:36px; background:var(--accent); border:none; border-radius:7px; color:#fff; cursor:pointer; font-size:18px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .send-btn:hover:not(:disabled) { background:var(--accent-h); }
+    .send-btn:disabled { opacity:.4; cursor:not-allowed; }
+    .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.7); display:flex; align-items:center; justify-content:center; z-index:50; }
+    .modal { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:28px; width:360px; }
+    .modal h3 { font-size:18px; font-weight:700; margin-bottom:20px; }
+    .modal-footer { display:flex; gap:10px; margin-top:20px; }
+    .btn-secondary { flex:1; padding:10px; background:var(--surface2); border:1px solid var(--border); color:var(--text); border-radius:var(--radius); cursor:pointer; font-size:14px; font-weight:600; }
+    .btn-primary { flex:1; padding:10px; background:var(--accent); border:none; color:#fff; border-radius:var(--radius); cursor:pointer; font-size:14px; font-weight:600; }
+    .add-room-btn { width:calc(100% - 12px); margin:6px; padding:8px; background:none; border:1px dashed var(--border); border-radius:7px; color:var(--muted); cursor:pointer; font-size:13px; transition:all .15s; }
+    .add-room-btn:hover { background:var(--surface2); color:var(--text); }
+    .empty-state { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; color:var(--muted); gap:10px; }
+    .empty-state .icon { font-size:48px; }
+  </style>
+
+</head>
+<body>
+<div id="root"></div>
+
+<!--<script>-->
+<!--  console.log("Hello");-->
+<!--</script>-->
+<script type="text/babel">
+  const { useState, useEffect, useRef, useMemo } = React;
+
+  const API = '';
+  const WS  = '';
+
+  async function apiFetch(path, opts = {}, token = null) {
+    const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const res = await fetch(`${API}${path}`, { ...opts, headers });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: res.statusText }));
+      throw new Error(err.message || res.statusText);
+    }
+    return res.status === 204 ? null : res.json();
+  }
+
+  const AVATAR_COLORS = ['#5865f2','#3ba55d','#faa61a','#ed4245','#eb459e','#00b0f4'];
+  function avatarColor(name) {
+    let h = 0;
+    for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
+    return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
+  }
+  function initials(name) { return name ? name.slice(0,2).toUpperCase() : '?'; }
+  function fmtTime(iso) {
+    return new Date(iso).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+  }
+
+  // ── Auth Screen ───────────────────────────────────────────────────────────────
+  function AuthScreen({ onAuth }) {
+    const [tab,  setTab]  = useState('login');
+    const [form, setForm] = useState({ username:'', password:'', email:'', displayName:'' });
+    const [err,  setErr]  = useState('');
+    const [busy, setBusy] = useState(false);
+    const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
+
+    async function submit(e) {
+      e.preventDefault(); setErr(''); setBusy(true);
+      try {
+        const path = tab === 'login' ? '/api/auth/login' : '/api/auth/register';
+        const body = tab === 'login'
+          ? { username: form.username, password: form.password }
+          : { username: form.username, password: form.password, email: form.email, displayName: form.displayName };
+        const data = await apiFetch(path, { method:'POST', body: JSON.stringify(body) });
+        onAuth(data.token, data.user);
+      } catch(ex) { setErr(ex.message); }
+      finally { setBusy(false); }
+    }
+
+    return (
+      <div className="auth-overlay">
+        <div className="auth-card">
+          <h1>💬 Chat</h1>
+          <p>Real-time distributed messaging</p>
+          <div className="tabs">
+            <button className={`tab ${tab==='login'?'active':''}`}    onClick={()=>{setTab('login');setErr('')}}>Sign in</button>
+            <button className={`tab ${tab==='register'?'active':''}`} onClick={()=>{setTab('register');setErr('')}}>Register</button>
+          </div>
+          {err && <div className="error-msg">{err}</div>}
+          <form onSubmit={submit}>
+            <div className="form-group"><label>Username</label>
+              <input value={form.username} onChange={set('username')} placeholder="your_username" required autoFocus />
+            </div>
+            {tab==='register' && <>
+              <div className="form-group"><label>Email</label>
+                <input type="email" value={form.email} onChange={set('email')} placeholder="you@example.com" required />
+              </div>
+              <div className="form-group"><label>Display name</label>
+                <input value={form.displayName} onChange={set('displayName')} placeholder="Your Name" />
+              </div>
+            </>}
+            <div className="form-group"><label>Password</label>
+              <input type="password" value={form.password} onChange={set('password')} placeholder="••••••••" required />
+            </div>
+            <button className="btn" type="submit" disabled={busy}>
+              {busy ? 'Please wait…' : tab==='login' ? 'Sign in' : 'Create account'}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Create Room Modal ─────────────────────────────────────────────────────────
+  function CreateRoomModal({ token, onCreated, onClose }) {
+    const [name, setName] = useState('');
+    const [desc, setDesc] = useState('');
+    const [isPrivate, setPrivate] = useState(false);
+    const [err,  setErr]  = useState('');
+    const [busy, setBusy] = useState(false);
+
+    async function submit(e) {
+      e.preventDefault(); setErr(''); setBusy(true);
+      try {
+        const room = await apiFetch('/api/rooms', {
+          method:'POST', body: JSON.stringify({ name, description: desc, isPrivate, maxMembers: 500 })
+        }, token);
+        onCreated(room);
+      } catch(ex) { setErr(ex.message); }
+      finally { setBusy(false); }
+    }
+
+    return (
+      <div className="modal-bg" onClick={e=>e.target===e.currentTarget&&onClose()}>
+        <div className="modal">
+          <h3>Create a room</h3>
+          {err && <div className="error-msg">{err}</div>}
+          <form onSubmit={submit}>
+            <div className="form-group"><label>Room name</label>
+              <input value={name} onChange={e=>setName(e.target.value)} placeholder="general" required autoFocus />
+            </div>
+            <div className="form-group"><label>Description</label>
+              <input value={desc} onChange={e=>setDesc(e.target.value)} placeholder="What's this room about?" />
+            </div>
+            <div className="form-group" style={{display:'flex',alignItems:'center',gap:10}}>
+              <input type="checkbox" id="priv" checked={isPrivate} onChange={e=>setPrivate(e.target.checked)} style={{width:'auto'}} />
+              <label htmlFor="priv" style={{margin:0,textTransform:'none',letterSpacing:0,fontSize:14}}>Private room</label>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+              <button type="submit" className="btn-primary" disabled={busy||!name.trim()}>
+                {busy ? 'Creating…' : 'Create room'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Message Row ───────────────────────────────────────────────────────────────
+  const Message = React.memo(function Message({ msg, prevMsg }) {
+    if (['JOIN','LEAVE','ROOM_EVENT'].includes(msg.type)) {
+      return <div className="sys-msg">{msg.content}</div>;
+    }
+    const showHeader = !prevMsg || prevMsg.senderId !== msg.senderId
+      || new Date(msg.createdAt) - new Date(prevMsg.createdAt) > 5*60*1000;
+    return (
+      <div className="msg-row">
+        <div className="msg-avatar" style={{background:avatarColor(msg.senderUsername), visibility:showHeader?'visible':'hidden'}}>
+          {initials(msg.senderDisplayName || msg.senderUsername)}
+        </div>
+        <div className="msg-body">
+          {showHeader && (
+            <div className="msg-meta">
+              <span className="msg-author">{msg.senderDisplayName || msg.senderUsername}</span>
+              <span className="msg-time">{fmtTime(msg.createdAt)}</span>
+            </div>
+          )}
+          <div className="msg-text">{msg.content}</div>
+        </div>
+      </div>
+    );
+  });
+
+  // ── Main App ──────────────────────────────────────────────────────────────────
+  function App() {
+    const [token, setToken] = useState(() => localStorage.getItem('chat_token'));
+    const [user,  setUser]  = useState(() => { try { return JSON.parse(localStorage.getItem('chat_user')); } catch { return null; } });
+    const [rooms,       setRooms]       = useState([]);
+    const [activeRoom,  setActiveRoom]  = useState(null);
+    const [messages,    setMessages]    = useState([]);
+    const [cursor,      setCursor]      = useState(null);
+    const [hasMore,     setHasMore]     = useState(false);
+    const [loadingHist, setLoadingHist] = useState(false);
+    const [connState,   setConnState]   = useState('disconnected');
+    const [typingUsers, setTypingUsers] = useState(new Set());
+    const [draft,       setDraft]       = useState('');
+    const [showModal,   setShowModal]   = useState(false);
+    const [error,       setError]       = useState('');
+
+    const stompRef       = useRef(null);
+    const subRef         = useRef(null);
+    const messagesEndRef = useRef(null);
+    const typingTimerRef = useRef(null);
+    const inputRef       = useRef(null);
+    const activeRoomRef  = useRef(null);
+
+    // keep ref in sync so STOMP callbacks can read current room
+    useEffect(() => { activeRoomRef.current = activeRoom; }, [activeRoom]);
+
+    function handleAuth(tok, usr) {
+      localStorage.setItem('chat_token', tok);
+      localStorage.setItem('chat_user',  JSON.stringify(usr));
+      setToken(tok); setUser(usr);
+    }
+
+    function handleLogout() {
+      disconnectStomp();
+      localStorage.removeItem('chat_token');
+      localStorage.removeItem('chat_user');
+      setToken(null); setUser(null);
+      setRooms([]); setActiveRoom(null); setMessages([]);
+    }
+
+    // load rooms after login
+    useEffect(() => {
+      if (!token) return;
+      apiFetch('/api/rooms/mine', {}, token).then(setRooms).catch(ex => setError(ex.message));
+    }, [token]);
+
+    // connect STOMP after login
+    useEffect(() => {
+      if (!token) return;
+      connectStomp();
+      return () => disconnectStomp();
+    }, [token]);
+
+    // ── STOMP (stomp.js v2 API: Stomp.over + client.connect) ─────────────────
+    function connectStomp() {
+      setConnState('connecting');
+      const socket = new SockJS(`${WS}/ws?token=${token}`);
+      const client = Stomp.over(socket);
+      client.reconnect_delay = 5000;
+      client.debug = () => {};   // silence noisy logs
+
+      client.connect(
+        {},
+        () => {
+          // onConnect
+          stompRef.current = client;
+          setConnState('connected');
+          setError('');
+
+          client.subscribe('/user/queue/errors', frame => {
+            const e = JSON.parse(frame.body);
+            setError(e.message || 'An error occurred');
+          });
+
+          const room = activeRoomRef.current;
+          if (room) subscribeToRoom(client, room.id);
+        },
+        () => {
+          // onError / disconnect
+          setConnState('disconnected');
+        }
+      );
+
+      stompRef.current = client;
+    }
+
+    function disconnectStomp() {
+      try { subRef.current && subRef.current.unsubscribe(); } catch(_) {}
+     if (stompRef.current && stompRef.current.connected) {
+    stompRef.current.disconnect(() => {
+        console.log("Disconnected");
+    });
+}
+
+stompRef.current = null;
+setConnState("disconnected");
+      stompRef.current = null;
+      setConnState('disconnected');
+    }
+
+    function subscribeToRoom(client, roomId) {
+      try { subRef.current && subRef.current.unsubscribe(); } catch(_) {}
+      subRef.current = client.subscribe(`/topic/room.${roomId}`, frame => {
+        handleChatEvent(JSON.parse(frame.body));
+      });
+    }
+
+    function handleChatEvent(event) {
+      switch (event.type) {
+        case 'MESSAGE':
+        case 'JOIN':
+        case 'LEAVE':
+        case 'ROOM_EVENT': {
+          const msg = event.payload;
+          setMessages(prev => {
+            if (prev.find(m => m.id === msg.id)) return prev;
+            return [...prev, msg];
+          });
+          setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior:'smooth' }), 50);
+          break;
+        }
+        case 'TYPING': {
+          const { username, isTyping } = event.payload;
+          if (username === user?.username) break;
+          setTypingUsers(prev => {
+            const next = new Set(prev);
+            isTyping ? next.add(username) : next.delete(username);
+            return next;
+          });
+          break;
+        }
+      }
+    }
+
+    async function selectRoom(room) {
+      if (activeRoomRef.current?.id === room.id) return;
+      setActiveRoom(room);
+      setMessages([]); setCursor(null); setHasMore(false); setTypingUsers(new Set());
+
+      const client = stompRef.current;
+      if (client && client.connected) {
+        subscribeToRoom(client, room.id);
+        client.send('/app/chat.join', {}, JSON.stringify({ roomId: room.id }));
+      }
+
+      await loadHistory(room.id, null);
+      inputRef.current?.focus();
+    }
+
+    async function loadHistory(roomId, beforeId) {
+      setLoadingHist(true);
+      try {
+        const url = `/api/messages/${roomId}/history${beforeId ? `?beforeId=${beforeId}` : ''}`;
+        const page = await apiFetch(url, {}, token);
+        const msgs = [...page.messages].reverse();
+        setMessages(prev => beforeId ? [...msgs, ...prev] : msgs);
+        setCursor(page.nextCursor);
+        setHasMore(page.hasMore);
+        if (!beforeId) setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior:'auto' }), 50);
+      } catch(ex) { setError(ex.message); }
+      finally { setLoadingHist(false); }
+    }
+
+    function sendMessage() {
+      const content = draft.trim();
+      const client  = stompRef.current;
+      if (!content || !activeRoomRef.current || !client || !client.connected) return;
+      client.send('/app/chat.send', {}, JSON.stringify({ roomId: activeRoomRef.current.id, content, type:'TEXT' }));
+      setDraft('');
+      stopTyping();
+    }
+
+    function startTyping() {
+      const client = stompRef.current;
+      if (!activeRoomRef.current || !client || !client.connected) return;
+      client.send('/app/chat.typing', {}, JSON.stringify({
+        roomId: activeRoomRef.current.id, userId: user.id, username: user.username, isTyping: true
+      }));
+    }
+
+    function stopTyping() {
+      const client = stompRef.current;
+      if (!activeRoomRef.current || !client || !client.connected) return;
+      client.send('/app/chat.typing', {}, JSON.stringify({
+        roomId: activeRoomRef.current.id, userId: user.id, username: user.username, isTyping: false
+      }));
+    }
+
+    function onInputChange(e) {
+      setDraft(e.target.value);
+      clearTimeout(typingTimerRef.current);
+      startTyping();
+      typingTimerRef.current = setTimeout(stopTyping, 2000);
+    }
+
+    function onKeyDown(e) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    }
+
+    function onRoomCreated(room) {
+      setRooms(prev => [...prev, room]);
+      setShowModal(false);
+      selectRoom(room);
+    }
+
+    const typingLabel = useMemo(() => {
+      const arr = [...typingUsers];
+      if (!arr.length) return '';
+      if (arr.length === 1) return `${arr[0]} is typing`;
+      if (arr.length === 2) return `${arr[0]} and ${arr[1]} are typing`;
+      return `${arr.length} people are typing`;
+    }, [typingUsers]);
+
+    const connLabel = { connected:'Connected', connecting:'Connecting…', disconnected:'Disconnected' }[connState];
+
+    if (!token || !user) return <AuthScreen onAuth={handleAuth} />;
+
+    return (
+      <div className="app">
+        {showModal && <CreateRoomModal token={token} onCreated={onRoomCreated} onClose={()=>setShowModal(false)} />}
+
+        <div className="sidebar">
+          <div className="sidebar-header">
+            <h2>💬 Chat Platform</h2>
+            <p>Distributed · Real-time</p>
+          </div>
+          <div className="section-label">Rooms</div>
+          {rooms.map(r => (
+            <div key={r.id} className={`room-item ${activeRoom?.id===r.id?'active':''}`} onClick={()=>selectRoom(r)}>
+              <span style={{fontSize:18}}>#</span>
+              <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}</span>
+            </div>
+          ))}
+          <button className="add-room-btn" onClick={()=>setShowModal(true)}>+ Create room</button>
+          <div className="sidebar-footer">
+            <div className="avatar" style={{background:avatarColor(user.username)}}>
+              {initials(user.displayName || user.username)}
+            </div>
+            <div className="user-info">
+              <div className="user-name">{user.displayName || user.username}</div>
+              <div className="user-status">● {connLabel}</div>
+            </div>
+            <button className="logout-btn" onClick={handleLogout} title="Sign out">⏻</button>
+          </div>
+        </div>
+
+        <div className="main">
+          {!activeRoom ? (
+            <div className="empty-state">
+              <div className="icon">💬</div>
+              <p>Select a room to start chatting</p>
+            </div>
+          ) : (
+            <div className="chat-area">
+              <div className="chat-header">
+                <div className={`status-dot ${connState}`} />
+                <h3># {activeRoom.name}</h3>
+                {activeRoom.description && <span style={{fontSize:13,color:'var(--muted)'}}>{activeRoom.description}</span>}
+                <span className="conn-label">{connLabel}</span>
+              </div>
+
+              {error && (
+                <div className="error-msg" style={{margin:'8px 16px',cursor:'pointer'}} onClick={()=>setError('')}>
+                  ⚠ {error} <span style={{float:'right'}}>✕</span>
+                </div>
+              )}
+
+              <div className="messages">
+                {hasMore && (
+                  <button className="load-more" disabled={loadingHist} onClick={()=>loadHistory(activeRoom.id, cursor)}>
+                    {loadingHist ? 'Loading…' : '↑ Load older messages'}
+                  </button>
+                )}
+                {messages.map((msg, i) => (
+                  <Message key={msg.id ?? `tmp-${i}`} msg={msg} prevMsg={messages[i-1]} />
+                ))}
+                <div ref={messagesEndRef} />
+              </div>
+
+              <div className="typing-indicator">
+                {typingLabel && (
+                  <span>{typingLabel} <span className="typing-dots"><span>·</span><span>·</span><span>·</span></span></span>
+                )}
+              </div>
+
+              <div className="input-bar">
+                <div className="input-wrap">
+                  <textarea ref={inputRef} className="msg-input" rows={1}
+                    placeholder={`Message #${activeRoom.name}`}
+                    value={draft} onChange={onInputChange} onKeyDown={onKeyDown}
+                    disabled={connState !== 'connected'}
+                  />
+                  <button className="send-btn" onClick={sendMessage}
+                    disabled={!draft.trim() || connState !== 'connected'}>➤</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+
+</body>
+</html>

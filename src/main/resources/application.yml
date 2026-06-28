@@ -1,0 +1,115 @@
+spring:
+  application:
+    name: chat-platform
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:chat_platform}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASS:}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      pool-name: ChatHikariPool
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        jdbc:
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    validate-on-migrate: true
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 20
+          max-idle: 10
+          min-idle: 5
+          max-wait: 1000ms
+        shutdown-timeout: 5000ms
+
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+
+# Application-specific settings
+app:
+  server-id: ${SERVER_ID:server-1}
+  jwt:
+    secret: ${JWT_SECRET:this-is-a-very-long-secret-key-for-jwt-signing-must-be-256-bits-min}
+    expiration-ms: 86400000   # 24 hours
+  websocket:
+    allowed-origins: ${ALLOWED_ORIGINS:http://localhost:3000,http://localhost:80}
+    heartbeat-interval: 25000
+    heartbeat-timeout: 60000
+  redis:
+    presence-ttl-seconds: 30
+    message-cache-size: 200
+    rate-limit:
+      window-seconds: 60
+      max-messages: 60
+  thread-pools:
+    db-write-core: 5
+    db-write-max: 20
+    redis-publish-core: 5
+    redis-publish-max: 15
+    presence-core: 2
+    presence-max: 8
+  queue:
+    message-capacity: 10000
+    drain-timeout-seconds: 30
+
+# Actuator / health
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  health:
+    redis:
+      enabled: true
+    db:
+      enabled: true
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+  tomcat:
+    threads:
+      max: 200
+      min-spare: 20
+
+spring.lifecycle:
+  timeout-per-shutdown-phase: 30s
+
+logging:
+  level:
+    com.google.chat: DEBUG
+    org.springframework.web.socket: INFO
+    org.springframework.data.redis: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} [${app.server-id}] - %msg%n"
